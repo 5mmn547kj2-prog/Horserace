@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Tap Derby</title>
+<style>
+  :root { --ink:#f4f1e8; --gold:#d6af50; --green:#1f6b3a; --panel:rgba(14,22,18,.78); }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; }
+  html,body { margin:0; height:100%; overflow:hidden; background:#9fd0ee; font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif; color:var(--ink); touch-action:manipulation; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  #hud { position:fixed; inset:0; pointer-events:none; padding:env(safe-area-inset-top) 0 0 0; }
+  .top { display:flex; gap:10px; justify-content:space-between; align-items:flex-start; padding:12px; }
+  .chip { background:var(--panel); border:1px solid rgba(214,175,80,.45); border-radius:12px; padding:8px 14px; backdrop-filter:blur(4px); min-width:92px; }
+  .chip small { display:block; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); }
+  .chip b { font-size:24px; font-variant-numeric:tabular-nums; }
+  #track { position:absolute; left:12px; right:12px; top:78px; height:14px; background:var(--panel); border-radius:8px; border:1px solid rgba(214,175,80,.45); }
+  #track i { position:absolute; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; border:2px solid #fff; transition:none; }
+  #track i.me { width:18px; height:18px; margin:-9px 0 0 -9px; z-index:2; }
+  #flag { position:absolute; right:-2px; top:-4px; width:6px; height:20px; background:repeating-linear-gradient(#fff 0 4px,#111 4px 8px); }
+  #power { position:absolute; left:12px; right:12px; bottom:calc(14px + env(safe-area-inset-bottom)); height:18px; background:var(--panel); border-radius:10px; border:1px solid rgba(214,175,80,.45); overflow:hidden; }
+  #power div { height:100%; width:0; background:linear-gradient(90deg,#3fa55b,#d6af50,#d8553c); }
+  #hint { position:absolute; left:0; right:0; bottom:calc(44px + env(safe-area-inset-bottom)); text-align:center; font-size:14px; letter-spacing:.12em; text-transform:uppercase; opacity:.9; text-shadow:0 1px 4px #000; }
+  #count { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:min(34vw,220px); font-weight:800; color:#fff; text-shadow:0 6px 30px rgba(0,0,0,.6); }
+  #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(8,14,10,.62); z-index:5; padding:20px; }
+  .card { background:#12201a; border:1px solid rgba(214,175,80,.6); border-radius:18px; padding:28px 30px; max-width:420px; width:100%; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  .card h1 { margin:0 0 6px; font-size:40px; letter-spacing:.04em; color:var(--gold); }
+  .card p { margin:8px 0 18px; line-height:1.5; color:#d9d5c7; }
+  .card .big { font-size:46px; font-weight:800; color:#fff; margin:4px 0; }
+  .card .row { display:flex; justify-content:center; gap:22px; margin:10px 0 18px; }
+  .card .row div small { display:block; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); }
+  .card .row div b { font-size:22px; }
+  button { font:inherit; font-weight:700; letter-spacing:.1em; text-transform:uppercase; background:var(--gold); color:#1a1a12; border:0; border-radius:12px; padding:14px 30px; cursor:pointer; }
+  button:active { transform:scale(.97); }
+  #warn { margin-top:14px; font-size:13px; color:#f0a89a; display:none; line-height:1.4; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="top">
+    <div class="chip"><small>Position</small><b id="pos">1/4</b></div>
+    <div class="chip"><small>Time</small><b id="time">0.00</b></div>
+    <div class="chip"><small>Speed</small><b id="spd">0</b></div>
+  </div>
+  <div id="track"><div id="flag"></div></div>
+  <div id="count"></div>
+  <div id="hint">Tap or click as fast as you can</div>
+  <div id="power"><div id="pbar"></div></div>
+</div>
+
+<div id="overlay">
+  <div class="card" id="menu">
+    <h1>TAP DERBY</h1>
+    <p>Four horses, one finish line. Tap, click or press the space bar as fast as you can to make your horse gallop. The faster you tap, the faster you run.</p>
+    <button id="start" disabled>Loading...</button>
+    <div id="warn"></div>
+  </div>
+  <div class="card hidden" id="result">
+    <p style="margin:0;color:var(--gold);letter-spacing:.14em;text-transform:uppercase;font-size:12px">Race finished</p>
+    <div class="big" id="rpos">1st</div>
+    <div class="row">
+      <div><small>Your time</small><b id="rtime">0.00s</b></div>
+      <div><small>Best time</small><b id="rbest">-</b></div>
+    </div>
+    <button id="again">Race again</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+
+const MODEL_URL = './centaur_jockey.glb';
+const TRACK_LEN = 320;           // metres to the finish line
+const LANES = [-5.4, -1.8, 1.8, 5.4];
+const PLAYER_LANE = 1;
+const HORSE_SCALE = 1.25;
+const MAX_SPEED = 30;
+
+// per-horse colours (coat, silks)
+const LOOKS = [
+  { coat: 0x7a3e1c, silk: 0x181818, name: 'You' },
+  { coat: 0x2b1a12, silk: 0x1f4fa8, name: 'Rival 1' },
+  { coat: 0xb27a3c, silk: 0xb5292b, name: 'Rival 2' },
+  { coat: 0x8a8a86, silk: 0x2c7a3f, name: 'Rival 3' },
+];
+
+const $ = id => document.getElementById(id);
+const canvas = $('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fd0ee);
+scene.fog = new THREE.Fog(0x9fd0ee, 60, 230);
+
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x4a6b3a, 1.15));
+const sun = new THREE.DirectionalLight(0xfff2d6, 2.1);
+sun.position.set(-25, 40, -10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 40, bottom: -40, near: 1, far: 140 });
+scene.add(sun); scene.add(sun.target);
+
+/* ---------------- world ---------------- */
+function buildWorld() {
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(600, 900),
+    new THREE.MeshStandardMaterial({ color: 0x3f8a43, roughness: 1 }));
+  grass.rotation.x = -Math.PI / 2; grass.position.set(0, -0.01, TRACK_LEN / 2); grass.receiveShadow = true;
+  scene.add(grass);
+
+  // mown stripes
+  for (let i = 0; i < 40; i++) {
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(600, 10),
+      new THREE.MeshStandardMaterial({ color: i % 2 ? 0x479b4c : 0x3a7d3e, roughness: 1 }));
+    s.rotation.x = -Math.PI / 2; s.position.set(0, 0, -40 + i * 20); s.receiveShadow = true; scene.add(s);
+  }
+
+  const dirt = new THREE.Mesh(new THREE.PlaneGeometry(15.5, TRACK_LEN + 140),
+    new THREE.MeshStandardMaterial({ color: 0xb48a5a, roughness: 1 }));
+  dirt.rotation.x = -Math.PI / 2; dirt.position.set(0, 0.02, TRACK_LEN / 2 + 10); dirt.receiveShadow = true;
+  scene.add(dirt);
+
+  // lane lines
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xf1e6cf });
+  [-7.2, -3.6, 0, 3.6, 7.2].forEach(x => {
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(0.12, TRACK_LEN + 140), lineMat);
+    l.rotation.x = -Math.PI / 2; l.position.set(x, 0.03, TRACK_LEN / 2 + 10); scene.add(l);
+  });
+
+  // distance marks every 40 m
+  for (let z = 40; z < TRACK_LEN; z += 40) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(15, 0.25), new THREE.MeshBasicMaterial({ color: 0xd9c9a8 }));
+    m.rotation.x = -Math.PI / 2; m.position.set(0, 0.035, z); scene.add(m);
+  }
+
+  // starting line
+  const start = new THREE.Mesh(new THREE.PlaneGeometry(15, 0.5), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  start.rotation.x = -Math.PI / 2; start.position.set(0, 0.04, 0); scene.add(start);
+
+  // finish line (checkerboard)
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 32;
+  const g = cv.getContext('2d');
+  for (let x = 0; x < 32; x++) for (let y = 0; y < 4; y++) { g.fillStyle = (x + y) % 2 ? '#111' : '#fff'; g.fillRect(x * 8, y * 8, 8, 8); }
+  const ft = new THREE.CanvasTexture(cv); ft.colorSpace = THREE.SRGBColorSpace;
+  const fin = new THREE.Mesh(new THREE.PlaneGeometry(15, 1.4), new THREE.MeshBasicMaterial({ map: ft }));
+  fin.rotation.x = -Math.PI / 2; fin.position.set(0, 0.05, TRACK_LEN); scene.add(fin);
+
+  // finish arch
+  const postMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: .6 });
+  [-8.4, 8.4].forEach(x => {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 7, 0.5), postMat);
+    p.position.set(x, 3.5, TRACK_LEN); p.castShadow = true; scene.add(p);
+  });
+  const bcv = document.createElement('canvas'); bcv.width = 1024; bcv.height = 128;
+  const bg = bcv.getContext('2d');
+  bg.fillStyle = '#12201a'; bg.fillRect(0, 0, 1024, 128);
+  bg.strokeStyle = '#d6af50'; bg.lineWidth = 8; bg.strokeRect(6, 6, 1012, 116);
+  bg.fillStyle = '#d6af50'; bg.font = 'bold 84px "Trebuchet MS", sans-serif'; bg.textAlign = 'center'; bg.textBaseline = 'middle';
+  bg.fillText('FINISH', 512, 68);
+  const bt = new THREE.CanvasTexture(bcv); bt.colorSpace = THREE.SRGBColorSpace;
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(17.4, 2, 0.4), [
+    postMat, postMat, postMat, postMat,
+    new THREE.MeshBasicMaterial({ map: bt }), new THREE.MeshBasicMaterial({ map: bt })]);
+  banner.position.set(0, 7, TRACK_LEN); scene.add(banner);
+
+  // rails (instanced)
+  const railMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: .7 });
+  const n = Math.ceil((TRACK_LEN + 140) / 4);
+  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 1.3, 0.2), railMat, n * 2);
+  const dummy = new THREE.Object3D(); let k = 0;
+  [-8.2, 8.2].forEach(x => { for (let i = 0; i < n; i++) { dummy.position.set(x, 0.65, -50 + i * 4); dummy.updateMatrix(); posts.setMatrixAt(k++, dummy.matrix); } });
+  posts.castShadow = true; scene.add(posts);
+  [-8.2, 8.2].forEach(x => [0.5, 1.1].forEach(y => {
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, TRACK_LEN + 140), railMat);
+    r.position.set(x, y, TRACK_LEN / 2 + 10); scene.add(r);
+  }));
+
+  // trees and stands (simple, decorative)
+  const trunk = new THREE.MeshStandardMaterial({ color: 0x5a3b22, roughness: 1 });
+  const leaf = new THREE.MeshStandardMaterial({ color: 0x2f6f35, roughness: 1 });
+  for (let i = 0; i < 46; i++) {
+    const side = i % 2 ? 1 : -1;
+    const z = -30 + (i >> 1) * 16 + Math.random() * 6;
+    const x = side * (18 + Math.random() * 40);
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 3, 7), trunk); t.position.set(x, 1.5, z);
+    const c = new THREE.Mesh(new THREE.ConeGeometry(2.6 + Math.random(), 7 + Math.random() * 3, 8), leaf); c.position.set(x, 6, z);
+    t.castShadow = c.castShadow = true; scene.add(t, c);
+  }
+  const standMat = new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: .8 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0xb5292b, roughness: .7 });
+  for (let s = 0; s < 3; s++) {
+    const z = TRACK_LEN - 80 + s * 40;
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 30), standMat); stand.position.set(-15, 2.5, z);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(8, .5, 32), roofMat); roof.position.set(-15, 7, z);
+    stand.castShadow = roof.castShadow = true; scene.add(stand, roof);
+  }
+  // spectators on the stands
+  const dots = new THREE.InstancedMesh(new THREE.SphereGeometry(.28, 8, 6), new THREE.MeshStandardMaterial({ color: 0xffffff }), 360);
+  const col = new THREE.Color();
+  for (let i = 0; i < 360; i++) {
+    const s = Math.floor(i / 120), j = i % 120;
+    dummy.position.set(-12.3 + (j % 3) * .9 - 1, 5.4 + (j % 3) * .2, TRACK_LEN - 80 + s * 40 - 13 + Math.floor(j / 3) * .65);
+    dummy.updateMatrix(); dots.setMatrixAt(i, dummy.matrix);
+    dots.setColorAt(i, col.setHSL(Math.random(), .55, .55));
+  }
+  scene.add(dots);
+}
+buildWorld();
+
+/* ---------------- horses ---------------- */
+let template = null, modelOK = false;
+
+function placeholder() {            // only used when the .glb cannot be loaded
+  const g = new THREE.Group();
+  const m = new THREE.MeshStandardMaterial({ color: 0x7a3e1c });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.7, .8, 1.8), m); body.position.y = 1.4; g.add(body);
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(.5, .9, .4), new THREE.MeshStandardMaterial({ color: 0xd6a078 })); torso.position.set(0, 2.2, .8); g.add(torso);
+  const jk = new THREE.Mesh(new THREE.BoxGeometry(.45, .9, .4), new THREE.MeshStandardMaterial({ color: 0x222222 })); jk.position.set(0, 2.4, -.2); g.add(jk);
+  [[.2, .55], [-.2, .55], [.22, -.72], [-.22, -.72]].forEach(([x, z], i) => {
+    const pv = new THREE.Group(); pv.position.set(x, 1.15, z); pv.name = ['leg_FL', 'leg_FR', 'leg_BL', 'leg_BR'][i];
+    const l = new THREE.Mesh(new THREE.BoxGeometry(.14, 1.1, .14), m); l.position.y = -.55; pv.add(l); g.add(pv);
+  });
+  return g;
+}
+
+function makeHorse(i) {
+  const root = new THREE.Group();
+  const model = modelOK ? cloneSkinned(template) : placeholder();
+  model.scale.setScalar(HORSE_SCALE);
+  const look = LOOKS[i];
+  const parts = {};
+  model.traverse(o => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.material = o.material.clone();
+      if (o.material.name === 'coat') o.material.color.setHex(look.coat).convertSRGBToLinear();
+      if (o.material.name === 'silks_dark') o.material.color.setHex(look.silk).convertSRGBToLinear();
+      if (o.material.name === 'cloth' && i > 0) o.material.color.setHex(look.silk).convertSRGBToLinear();
+    }
+    if (/^(leg_|tail)/.test(o.name)) { parts[o.name] = o; o.userData.base = o.rotation.x; }
+  });
+  root.add(model);
+  root.position.set(LANES[i], 0, 0);
+  root.userData = { model, parts, z: 0, v: 0, phase: Math.random() * 6, finished: false, finishTime: 0, tapAcc: 0, skill: 0.9 + Math.random() * 0.25, wob: Math.random() * 10 };
+  scene.add(root);
+  return root;
+}
+
+let horses = [];
+const marker = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.25, 40), new THREE.MeshBasicMaterial({ color: 0xd6af50, side: THREE.DoubleSide, transparent: true, opacity: .9 }));
+marker.rotation.x = -Math.PI / 2; marker.position.y = 0.06; scene.add(marker);
+
+/* ---------------- game state ---------------- */
+let state = 'loading';         // loading | menu | countdown | racing | done
+let t0 = 0, raceTime = 0, countdownEnd = 0, finishOrder = [];
+const player = () => horses[0];
+
+function resetRace() {
+  horses.forEach(h => scene.remove(h));
+  horses = [];
+  // player goes in PLAYER_LANE; rivals fill the rest
+  const order = [PLAYER_LANE, ...[0, 1, 2, 3].filter(l => l !== PLAYER_LANE)];
+  for (let i = 0; i < 4; i++) {
+    const h = makeHorse(i);
+    h.position.x = LANES[order[i]];
+    h.rotation.y = 0;
+    horses.push(h);
+  }
+  finishOrder = []; raceTime = 0;
+  // track dots
+  document.querySelectorAll('#track i').forEach(e => e.remove());
+  const cols = ['#d6af50', '#3a6fd6', '#d63a3a', '#3fa55b'];
+  horses.forEach((h, i) => { const d = document.createElement('i'); d.style.background = cols[i]; if (i === 0) d.className = 'me'; $('track').appendChild(d); h.userData.dot = d; });
+  placeCamera(true);
+}
+
+function startCountdown() {
+  resetRace();
+  $('overlay').classList.add('hidden'); $('hud').classList.remove('hidden');
+  $('hint').classList.remove('hidden');
+  state = 'countdown'; countdownEnd = performance.now() + 3600;
+}
+
+function tap() {
+  if (state !== 'racing') return;
+  const p = player().userData;
+  p.v = Math.min(MAX_SPEED, p.v + 1.7);
+}
+
+addEventListener('pointerdown', e => { if (e.target.closest('button')) return; e.preventDefault(); tap(); }, { passive: false });
+addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (e.code === 'Space') { e.preventDefault(); tap(); }
+  if (e.code === 'Enter') {
+    if (state === 'menu' && !$('start').disabled) startCountdown();
+    else if (state === 'done') startCountdown();
+  }
+});
+$('start').onclick = startCountdown;
+$('again').onclick = startCountdown;
+
+/* ---------------- loop ---------------- */
+function ordinal(n) { return n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : (n % 10 < 4 ? n % 10 : 0)]); }
+
+function currentRank() { return 1 + horses.filter(h => h !== player() && h.userData.z > player().userData.z).length; }
+
+function updateHorse(h, dt, time) {
+  const u = h.userData;
+  if (!u.finished) {
+    if (state === 'racing' && h !== player()) {      // AI "tapping"
+      const rate = (4.6 + 1.6 * Math.sin(time * .7 + u.wob)) * u.skill;
+      u.tapAcc += rate * dt;
+      while (u.tapAcc >= 1) { u.tapAcc -= 1; u.v = Math.min(MAX_SPEED * 0.97, u.v + 1.7 * (0.85 + Math.random() * .3)); }
+    }
+    u.v = Math.max(0, u.v - (u.v * 0.58 + 1.2) * dt);
+    if (state === 'countdown') u.v = 0;
+    u.z += u.v * dt;
+    if (u.z >= TRACK_LEN && state === 'racing') {
+      u.finished = true; u.finishTime = raceTime; finishOrder.push(h);
+    }
+  } else {
+    u.v = Math.max(0, u.v - 7 * dt);                // slow down after the line
+    u.z += u.v * dt;
+  }
+  h.position.z = u.z;
+
+  // gallop animation
+  const k = Math.min(1, u.v / 18);
+  u.phase += dt * (3 + u.v * 0.62);
+  const amp = 0.95 * k, ph = u.phase;
+  const set = (n, a) => { const p = u.parts[n]; if (p) p.rotation.x = a; };
+  set('leg_FL', Math.sin(ph) * amp);
+  set('leg_FR', Math.sin(ph + 0.9) * amp);
+  set('leg_BL', Math.sin(ph + 3.0) * amp);
+  set('leg_BR', Math.sin(ph + 3.9) * amp);
+  const tail = u.parts.tail; if (tail) tail.rotation.x = 0.35 * k + Math.sin(ph * 1.3) * 0.15 * k;
+  u.model.position.y = Math.abs(Math.sin(ph * 0.5)) * 0.22 * k * HORSE_SCALE;
+  u.model.rotation.x = Math.sin(ph) * 0.045 * k;
+}
+
+function placeCamera(snap) {
+  const p = player(); if (!p) return;
+  const z = p.position.z, x = p.position.x;
+  const tx = x * 0.55, tz = z - 11.5;
+  if (snap) camera.position.set(tx, 5.6, tz); else camera.position.lerp(new THREE.Vector3(tx, 5.6, tz), 0.12);
+  const look = new THREE.Vector3(x * 0.7, 2.0, z + 9);
+  camera.lookAt(look);
+  camera.fov = 55 + Math.min(10, p.userData.v * 0.3);
+  camera.updateProjectionMatrix();
+}
+
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; const time = now / 1000;
+
+  if (state === 'countdown') {
+    const left = countdownEnd - now;
+    if (left > 600) $('count').textContent = String(Math.ceil((left - 600) / 1000));
+    else { state = 'racing'; t0 = now; $('count').textContent = 'GO!'; setTimeout(() => { $('count').textContent = ''; }, 700); }
+  }
+  if (state === 'racing') raceTime = (now - t0) / 1000;
+
+  horses.forEach(h => updateHorse(h, dt, time));
+
+  if (state === 'racing' && player().userData.finished) finishRace();
+  // if player is far behind and others all finished, end too
+  if (state === 'racing' && finishOrder.length === 4) finishRace();
+
+  if (horses.length) {
+    placeCamera(false);
+    const p = player();
+    marker.position.set(p.position.x, 0.06, p.position.z);
+    marker.scale.setScalar(1 + Math.sin(time * 6) * .05);
+    sun.position.set(p.position.x - 25, 40, p.position.z - 10); sun.target.position.set(p.position.x, 0, p.position.z + 10);
+    if (state === 'racing' || state === 'countdown') {
+      $('pos').textContent = currentRank() + '/4';
+      $('time').textContent = raceTime.toFixed(2);
+      $('spd').textContent = Math.round(p.userData.v * 3.6);
+      $('pbar').style.width = (p.userData.v / MAX_SPEED * 100) + '%';
+    }
+    horses.forEach(h => { h.userData.dot.style.left = (Math.min(1, h.userData.z / TRACK_LEN) * 100) + '%'; });
+  }
+  renderer.render(scene, camera);
+}
+
+function finishRace() {
+  state = 'done';
+  $('hint').classList.add('hidden');
+  const rank = finishOrder.indexOf(player()) + 1 || currentRank();
+  const tm = player().userData.finishTime || raceTime;
+  let best = null;
+  try { best = parseFloat(localStorage.getItem('tapderby_best')); } catch (e) {}
+  if (rank === 1 && (!best || tm < best)) { best = tm; try { localStorage.setItem('tapderby_best', String(tm)); } catch (e) {} }
+  $('rpos').textContent = ordinal(rank) + ' place';
+  $('rtime').textContent = tm.toFixed(2) + 's';
+  $('rbest').textContent = best ? best.toFixed(2) + 's' : '-';
+  setTimeout(() => { $('menu').classList.add('hidden'); $('result').classList.remove('hidden'); $('overlay').classList.remove('hidden'); }, 1400);
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+/* ---------------- boot ---------------- */
+new GLTFLoader().load(MODEL_URL, gltf => {
+  template = gltf.scene; modelOK = true; ready();
+}, undefined, err => {
+  console.error(err);
+  const w = $('warn'); w.style.display = 'block';
+  w.textContent = 'Could not load centaur_jockey.glb. Make sure it sits next to index.html and that the page is served over http(s), not opened from a file. A simple placeholder is being used instead.';
+  ready();
+});
+
+function ready() {
+  state = 'menu'; $('start').disabled = false; $('start').textContent = 'Start race';
+  resetRace();
+  camera.position.set(-7, 4, -9); camera.lookAt(0, 1.8, 6);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
