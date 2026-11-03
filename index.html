@@ -165,7 +165,7 @@ function buildWorld() {
 
   // finish arch
   const postMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: .6 });
-  [-8.4, 8.4].forEach(x => {
+  [8.4].forEach(x => {
     const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 7, 0.5), postMat);
     p.position.set(x, 3.5, TRACK_LEN); p.castShadow = true; scene.add(p);
   });
@@ -184,11 +184,11 @@ function buildWorld() {
   // rails (instanced)
   const railMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: .7 });
   const n = Math.ceil((TRACK_LEN + 140) / 4);
-  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 1.3, 0.2), railMat, n * 2);
+  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 1.3, 0.2), railMat, n);
   const dummy = new THREE.Object3D(); let k = 0;
-  [-8.2, 8.2].forEach(x => { for (let i = 0; i < n; i++) { dummy.position.set(x, 0.65, -50 + i * 4); dummy.updateMatrix(); posts.setMatrixAt(k++, dummy.matrix); } });
+  [8.2].forEach(x => { for (let i = 0; i < n; i++) { dummy.position.set(x, 0.65, -50 + i * 4); dummy.updateMatrix(); posts.setMatrixAt(k++, dummy.matrix); } });
   posts.castShadow = true; scene.add(posts);
-  [-8.2, 8.2].forEach(x => [0.5, 1.1].forEach(y => {
+  [8.2].forEach(x => [0.5, 1.1].forEach(y => {
     const r = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, TRACK_LEN + 140), railMat);
     r.position.set(x, y, TRACK_LEN / 2 + 10); scene.add(r);
   }));
@@ -199,7 +199,7 @@ function buildWorld() {
   for (let i = 0; i < 46; i++) {
     const side = i % 2 ? 1 : -1;
     const z = -30 + (i >> 1) * 16 + Math.random() * 6;
-    const x = side * (18 + Math.random() * 40);
+    const x = side < 0 ? -(40 + Math.random() * 30) : 22 + Math.random() * 40;
     const t = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 3, 7), trunk); t.position.set(x, 1.5, z);
     const c = new THREE.Mesh(new THREE.ConeGeometry(2.6 + Math.random(), 7 + Math.random() * 3, 8), leaf); c.position.set(x, 6, z);
     t.castShadow = c.castShadow = true; scene.add(t, c);
@@ -208,8 +208,8 @@ function buildWorld() {
   const roofMat = new THREE.MeshStandardMaterial({ color: 0xb5292b, roughness: .7 });
   for (let s = 0; s < 3; s++) {
     const z = TRACK_LEN - 80 + s * 40;
-    const stand = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 30), standMat); stand.position.set(-15, 2.5, z);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(8, .5, 32), roofMat); roof.position.set(-15, 7, z);
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 30), standMat); stand.position.set(15, 2.5, z);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(8, .5, 32), roofMat); roof.position.set(15, 7, z);
     stand.castShadow = roof.castShadow = true; scene.add(stand, roof);
   }
   // spectators on the stands
@@ -217,7 +217,7 @@ function buildWorld() {
   const col = new THREE.Color();
   for (let i = 0; i < 360; i++) {
     const s = Math.floor(i / 120), j = i % 120;
-    dummy.position.set(-12.3 + (j % 3) * .9 - 1, 5.4 + (j % 3) * .2, TRACK_LEN - 80 + s * 40 - 13 + Math.floor(j / 3) * .65);
+    dummy.position.set(13.3 - (j % 3) * .9, 5.4 + (j % 3) * .2, TRACK_LEN - 80 + s * 40 - 13 + Math.floor(j / 3) * .65);
     dummy.updateMatrix(); dots.setMatrixAt(i, dummy.matrix);
     dots.setColorAt(i, col.setHSL(Math.random(), .55, .55));
   }
@@ -392,14 +392,14 @@ function updateHorse(h, dt, time) {
 function placeCamera(snap) {
   const p = player(); if (!p) return;
   const z = p.position.z, x = p.position.x;
-  // camera on the -X side looking along +X: the horse runs from left to right
   const t = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
-  const dist = Math.max(12, 4.4 / (t * camera.aspect));              // keep the whole horse in view on narrow phones
-  const ahead = Math.min(4.5, 0.36 * dist * t * camera.aspect);      // look a bit ahead so the horse sits left of centre
-  const want = new THREE.Vector3(x - dist, 3.2 + dist * 0.42, z + ahead);
+  const dist = Math.max(8.5, 3.4 / (t * camera.aspect));             // close; widens on narrow (portrait) screens
+  const ahead = Math.min(3.0, 0.30 * dist * t * camera.aspect);     // horse sits left of centre, running to the right
+  const yaw = 0.2;                                                    // ~11 deg towards the front so the faces are visible
+  const want = new THREE.Vector3(x - dist * Math.cos(yaw), 2.7 + dist * 0.10, z + ahead + dist * Math.sin(yaw));
   if (snap) camera.position.copy(want); else camera.position.lerp(want, 0.14);
-  camera.lookAt(x, 1.5, camera.position.z);
-  camera.fov = 50 + Math.min(8, p.userData.v * 0.25);
+  camera.lookAt(x, 1.85, z + ahead);
+  camera.fov = 48 + Math.min(5, p.userData.v * 0.15);
   camera.updateProjectionMatrix();
 }
 
