@@ -106,8 +106,8 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x9fd0ee);
-scene.fog = new THREE.Fog(0x9fd0ee, 60, 230);
+scene.background = new THREE.Color(0xb8d2df);
+scene.fog = new THREE.Fog(0xb8cfc7, 85, 280);
 
 const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
 
@@ -121,136 +121,371 @@ scene.add(sun); scene.add(sun.target);
 
 /* ---------------- world ---------------- */
 function buildWorld() {
+  // Procedural ground textures keep the scene self-contained (no extra image assets needed).
+  const makeGroundTexture = (kind) => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    const seed = kind === 'grass' ? 37 : 91;
+    let n = seed;
+    const rand = () => { n = (n * 1664525 + 1013904223) >>> 0; return n / 4294967296; };
+    if (kind === 'grass') {
+      ctx.fillStyle = '#648d42'; ctx.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 26000; i++) {
+        const x = rand() * 512, y = rand() * 512;
+        const light = rand() > .52;
+        ctx.strokeStyle = light ? 'rgba(177,194,112,.18)' : 'rgba(31,76,31,.2)';
+        ctx.lineWidth = .5 + rand() * 1.3;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (rand() - .5) * 3, y - 1 - rand() * 4); ctx.stroke();
+      }
+      for (let i = 0; i < 900; i++) {
+        ctx.fillStyle = rand() > .5 ? 'rgba(209,201,138,.12)' : 'rgba(20,58,26,.1)';
+        ctx.beginPath(); ctx.arc(rand() * 512, rand() * 512, .5 + rand() * 2, 0, Math.PI * 2); ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = '#98734d'; ctx.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 18000; i++) {
+        const x = rand() * 512, y = rand() * 512, r = .4 + rand() * 2.2;
+        ctx.fillStyle = rand() > .5 ? 'rgba(222,190,143,.22)' : 'rgba(62,43,29,.19)';
+        ctx.beginPath(); ctx.ellipse(x, y, r * 1.8, r, rand() * Math.PI, 0, Math.PI * 2); ctx.fill();
+      }
+      // Very subtle long hoof-worn streaks running down the course.
+      for (let i = 0; i < 34; i++) {
+        const x = rand() * 512;
+        ctx.strokeStyle = rand() > .5 ? 'rgba(225,195,151,.12)' : 'rgba(65,43,28,.12)';
+        ctx.lineWidth = 1 + rand() * 3; ctx.beginPath(); ctx.moveTo(x, 0); ctx.bezierCurveTo(x - 12, 150, x + 12, 350, x + (rand() - .5) * 16, 512); ctx.stroke();
+      }
+    }
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+    return tex;
+  };
+  const grassTex = makeGroundTexture('grass');
+  grassTex.repeat.set(34, 48);
+  const dirtTex = makeGroundTexture('dirt');
+  dirtTex.repeat.set(4, 25);
+
   const grass = new THREE.Mesh(new THREE.PlaneGeometry(600, 900),
-    new THREE.MeshStandardMaterial({ color: 0x3f8a43, roughness: 1 }));
-  grass.rotation.x = -Math.PI / 2; grass.position.set(0, -0.01, TRACK_LEN / 2); grass.receiveShadow = true;
+    new THREE.MeshStandardMaterial({ map: grassTex, color: 0xffffff, roughness: 1 }));
+  grass.rotation.x = -Math.PI / 2; grass.position.set(0, -0.025, TRACK_LEN / 2); grass.receiveShadow = true;
   scene.add(grass);
 
-  // mown stripes
-  for (let i = 0; i < 40; i++) {
+  // Long, gently varied mowing bands rather than flat alternating green slabs.
+  for (let i = 0; i < 46; i++) {
     const s = new THREE.Mesh(new THREE.PlaneGeometry(600, 10),
-      new THREE.MeshStandardMaterial({ color: i % 2 ? 0x479b4c : 0x3a7d3e, roughness: 1 }));
-    s.rotation.x = -Math.PI / 2; s.position.set(0, 0, -40 + i * 20); s.receiveShadow = true; scene.add(s);
+      new THREE.MeshStandardMaterial({ color: i % 2 ? 0x789b50 : 0x6c9149, roughness: 1, transparent: true, opacity: .13 }));
+    s.rotation.x = -Math.PI / 2; s.position.set(0, 0.001 + i * .00001, -50 + i * 20); s.receiveShadow = true; scene.add(s);
   }
 
+  // Worn, textured dirt racing surface with a narrow grass verge.
   const dirt = new THREE.Mesh(new THREE.PlaneGeometry(15.5, TRACK_LEN + 140),
-    new THREE.MeshStandardMaterial({ color: 0xb48a5a, roughness: 1 }));
-  dirt.rotation.x = -Math.PI / 2; dirt.position.set(0, 0.02, TRACK_LEN / 2 + 10); dirt.receiveShadow = true;
+    new THREE.MeshStandardMaterial({ map: dirtTex, color: 0xffffff, roughness: .98 }));
+  dirt.rotation.x = -Math.PI / 2; dirt.position.set(0, 0.018, TRACK_LEN / 2 + 10); dirt.receiveShadow = true;
   scene.add(dirt);
-
-  // lane lines
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xf1e6cf });
-  [-7.2, -3.6, 0, 3.6, 7.2].forEach(x => {
-    const l = new THREE.Mesh(new THREE.PlaneGeometry(0.12, TRACK_LEN + 140), lineMat);
-    l.rotation.x = -Math.PI / 2; l.position.set(x, 0.03, TRACK_LEN / 2 + 10); scene.add(l);
+  const vergeMat = new THREE.MeshStandardMaterial({ color: 0x6b9148, roughness: 1 });
+  [-8.1, 8.1].forEach(x => {
+    const verge = new THREE.Mesh(new THREE.PlaneGeometry(1.2, TRACK_LEN + 140), vergeMat);
+    verge.rotation.x = -Math.PI / 2; verge.position.set(x, .012, TRACK_LEN / 2 + 10); verge.receiveShadow = true; scene.add(verge);
   });
 
-  // distance marks every 40 m
+  // Fine, low-contrast lane separators.
+  const lineMat = new THREE.MeshStandardMaterial({ color: 0xd9cbb0, roughness: .95 });
+  [-7.2, -3.6, 0, 3.6, 7.2].forEach(x => {
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(0.075, TRACK_LEN + 140), lineMat);
+    l.rotation.x = -Math.PI / 2; l.position.set(x, 0.031, TRACK_LEN / 2 + 10); scene.add(l);
+  });
   for (let z = 40; z < TRACK_LEN; z += 40) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(15, 0.25), new THREE.MeshBasicMaterial({ color: 0xd9c9a8 }));
-    m.rotation.x = -Math.PI / 2; m.position.set(0, 0.035, z); scene.add(m);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(15, 0.22), new THREE.MeshBasicMaterial({ color: 0xcbb89a, transparent: true, opacity: .65 }));
+    m.rotation.x = -Math.PI / 2; m.position.set(0, 0.034, z); scene.add(m);
+    const markerText = new THREE.Mesh(new THREE.BoxGeometry(.04, .04, .04), new THREE.MeshBasicMaterial({ color: 0xe7d9bf }));
+    markerText.position.set(7.35, .07, z); scene.add(markerText);
   }
 
-  // starting line
-  const start = new THREE.Mesh(new THREE.PlaneGeometry(15, 0.5), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const start = new THREE.Mesh(new THREE.PlaneGeometry(15, 0.5), new THREE.MeshBasicMaterial({ color: 0xf4f1e8 }));
   start.rotation.x = -Math.PI / 2; start.position.set(0, 0.04, 0); scene.add(start);
 
-  // finish line (checkerboard)
+  // Finish checker and gantry.
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 32;
   const g = cv.getContext('2d');
-  for (let x = 0; x < 32; x++) for (let y = 0; y < 4; y++) { g.fillStyle = (x + y) % 2 ? '#111' : '#fff'; g.fillRect(x * 8, y * 8, 8, 8); }
+  for (let x = 0; x < 32; x++) for (let y = 0; y < 4; y++) { g.fillStyle = (x + y) % 2 ? '#181818' : '#f7f4eb'; g.fillRect(x * 8, y * 8, 8, 8); }
   const ft = new THREE.CanvasTexture(cv); ft.colorSpace = THREE.SRGBColorSpace;
   const fin = new THREE.Mesh(new THREE.PlaneGeometry(15, 1.4), new THREE.MeshBasicMaterial({ map: ft }));
   fin.rotation.x = -Math.PI / 2; fin.position.set(0, 0.05, TRACK_LEN); scene.add(fin);
 
-  // finish arch
-  const postMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: .6 });
-  [8.4].forEach(x => {
-    const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 7, 0.5), postMat);
+  const postMat = new THREE.MeshStandardMaterial({ color: 0xe8e5d9, roughness: .72 });
+  [-8.4, 8.4].forEach(x => {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(.48, 7, .55), postMat);
     p.position.set(x, 3.5, TRACK_LEN); p.castShadow = true; scene.add(p);
   });
   const bcv = document.createElement('canvas'); bcv.width = 1024; bcv.height = 128;
   const bg = bcv.getContext('2d');
-  bg.fillStyle = '#12201a'; bg.fillRect(0, 0, 1024, 128);
+  bg.fillStyle = '#173326'; bg.fillRect(0, 0, 1024, 128);
   bg.strokeStyle = '#d6af50'; bg.lineWidth = 8; bg.strokeRect(6, 6, 1012, 116);
-  bg.fillStyle = '#d6af50'; bg.font = 'bold 84px "Trebuchet MS", sans-serif'; bg.textAlign = 'center'; bg.textBaseline = 'middle';
-  bg.fillText('FINISH', 512, 68);
+  bg.fillStyle = '#e2c16e'; bg.font = 'bold 84px "Trebuchet MS", sans-serif'; bg.textAlign = 'center'; bg.textBaseline = 'middle'; bg.fillText('FINISH', 512, 68);
   const bt = new THREE.CanvasTexture(bcv); bt.colorSpace = THREE.SRGBColorSpace;
-  const banner = new THREE.Mesh(new THREE.BoxGeometry(17.4, 2, 0.4), [
-    postMat, postMat, postMat, postMat,
-    new THREE.MeshBasicMaterial({ map: bt }), new THREE.MeshBasicMaterial({ map: bt })]);
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(17.4, 2, .4), [postMat, postMat, postMat, postMat, new THREE.MeshBasicMaterial({ map: bt }), new THREE.MeshBasicMaterial({ map: bt })]);
   banner.position.set(0, 7, TRACK_LEN); scene.add(banner);
 
-  // rails (instanced)
-  const railMat = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: .7 });
-  const n = Math.ceil((TRACK_LEN + 140) / 4);
-  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 1.3, 0.2), railMat, n);
-  const dummy = new THREE.Object3D(); let k = 0;
-  [8.2].forEach(x => { for (let i = 0; i < n; i++) { dummy.position.set(x, 0.65, -50 + i * 4); dummy.updateMatrix(); posts.setMatrixAt(k++, dummy.matrix); } });
+  // Traditional white racecourse rail with regular timber supports on the far side.
+  const railMat = new THREE.MeshStandardMaterial({ color: 0xe5e3d8, roughness: .68 });
+  const postSide = new THREE.MeshStandardMaterial({ color: 0x756b59, roughness: .9 });
+  const nPosts = Math.ceil((TRACK_LEN + 140) / 4);
+  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(.18, 1.28, .18), postSide, nPosts);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < nPosts; i++) { dummy.position.set(8.2, .64, -50 + i * 4); dummy.rotation.y = .025 * Math.sin(i * .7); dummy.updateMatrix(); posts.setMatrixAt(i, dummy.matrix); }
   posts.castShadow = true; scene.add(posts);
-  [8.2].forEach(x => [0.5, 1.1].forEach(y => {
-    const r = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, TRACK_LEN + 140), railMat);
-    r.position.set(x, y, TRACK_LEN / 2 + 10); scene.add(r);
-  }));
+  [0.48, 1.08].forEach(y => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(.16, .14, TRACK_LEN + 140), railMat);
+    rail.position.set(8.2, y, TRACK_LEN / 2 + 10); rail.castShadow = true; scene.add(rail);
+  });
+  // A clipped hedge softens the hard edge behind the safety rail.
+  const hedgeMat = new THREE.MeshStandardMaterial({ color: 0x315e32, roughness: 1 });
+  for (let z = -35; z < TRACK_LEN + 95; z += 5) {
+    const hedge = new THREE.Mesh(new THREE.SphereGeometry(.9, 8, 6), hedgeMat);
+    hedge.scale.set(.9, .62, 2.5); hedge.position.set(10.4, .62, z); hedge.castShadow = true; scene.add(hedge);
+  }
 
-  // trees and stands (simple, decorative)
-  const trunk = new THREE.MeshStandardMaterial({ color: 0x5a3b22, roughness: 1 });
-  const leaf = new THREE.MeshStandardMaterial({ color: 0x2f6f35, roughness: 1 });
-  for (let i = 0; i < 46; i++) {
+  // Distant low hills add a natural horizon behind the course.
+  const hillMats = [0x78936f, 0x849d78, 0x6f8968].map(color => new THREE.MeshStandardMaterial({ color, roughness: 1, fog: true }));
+  for (let i = 0; i < 15; i++) {
     const side = i % 2 ? 1 : -1;
-    const z = -30 + (i >> 1) * 16 + Math.random() * 6;
-    const x = side < 0 ? -(40 + Math.random() * 30) : 22 + Math.random() * 40;
-    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 3, 7), trunk); t.position.set(x, 1.5, z);
-    const c = new THREE.Mesh(new THREE.ConeGeometry(2.6 + Math.random(), 7 + Math.random() * 3, 8), leaf); c.position.set(x, 6, z);
-    t.castShadow = c.castShadow = true; scene.add(t, c);
+    const hill = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), hillMats[i % hillMats.length]);
+    hill.scale.set(18 + (i % 4) * 7, 5 + (i % 3) * 2, 30 + (i % 5) * 9);
+    hill.position.set(side * (48 + (i % 3) * 18), -1.6, -35 + i * 28); hill.receiveShadow = true; scene.add(hill);
   }
-  const standMat = new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: .8 });
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0xb5292b, roughness: .7 });
+
+  // Varied deciduous trees with trunks, rounded crowns and subtle secondary foliage.
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x59412b, roughness: 1 });
+  const leafMats = [0x356b38, 0x477b3d, 0x547e43, 0x2e6035].map(color => new THREE.MeshStandardMaterial({ color, roughness: 1 }));
+  for (let i = 0; i < 52; i++) {
+    const side = i % 2 ? 1 : -1;
+    const z = -36 + Math.floor(i / 2) * 15 + Math.random() * 7;
+    const x = side < 0 ? -(34 + Math.random() * 35) : 22 + Math.random() * 34;
+    const height = 3.5 + Math.random() * 2.3;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.22, .38, height, 8), trunkMat);
+    trunk.position.set(x, height / 2, z); trunk.castShadow = true; scene.add(trunk);
+    const crown = new THREE.Group();
+    const radius = 2.0 + Math.random() * 1.25;
+    for (let j = 0; j < 4; j++) {
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(radius * (.64 + Math.random() * .18), 1), leafMats[(i + j) % leafMats.length]);
+      blob.position.set((Math.random() - .5) * radius, (Math.random() - .25) * radius, (Math.random() - .5) * radius);
+      blob.scale.set(1, .8 + Math.random() * .45, 1); blob.castShadow = true; crown.add(blob);
+    }
+    crown.position.set(x, height + 2.1, z); scene.add(crown);
+  }
+
+  // A larger, tiered grandstand, with visible roof supports and coloured spectator silhouettes.
+  const concreteMat = new THREE.MeshStandardMaterial({ color: 0xaaa99f, roughness: .88 });
+  const seatMats = [0x536b70, 0x6d765d, 0x8c6b55, 0x9a9b91].map(color => new THREE.MeshStandardMaterial({ color, roughness: .85 }));
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x7f3430, roughness: .72 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x4c5553, metalness: .28, roughness: .65 });
   for (let s = 0; s < 3; s++) {
-    const z = TRACK_LEN - 80 + s * 40;
-    const stand = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 30), standMat); stand.position.set(15, 2.5, z);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(8, .5, 32), roofMat); roof.position.set(15, 7, z);
-    stand.castShadow = roof.castShadow = true; scene.add(stand, roof);
+    const z = TRACK_LEN - 78 + s * 38;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(7.5, 1.2, 34), concreteMat); base.position.set(16.3, 1.0, z); base.castShadow = true; scene.add(base);
+    for (let tier = 0; tier < 5; tier++) {
+      const row = new THREE.Mesh(new THREE.BoxGeometry(6.8 - tier * .35, .48, 32), seatMats[(tier + s) % seatMats.length]);
+      row.position.set(16.3, 1.85 + tier * .78, z); row.castShadow = true; scene.add(row);
+    }
+    for (let k = 0; k < 4; k++) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(.22, 8.4, .25), steelMat);
+      pillar.position.set(12.9 + k * 2.25, 4.3, z - 15.5); pillar.castShadow = true; scene.add(pillar);
+    }
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(9.6, .55, 36), roofMat);
+    roof.position.set(16.2, 8.7, z); roof.castShadow = true; scene.add(roof);
+    const fascia = new THREE.Mesh(new THREE.BoxGeometry(9.7, .34, .45), postMat);
+    fascia.position.set(16.2, 8.35, z - 17.8); scene.add(fascia);
   }
-  // spectators on the stands
-  const dots = new THREE.InstancedMesh(new THREE.SphereGeometry(.28, 8, 6), new THREE.MeshStandardMaterial({ color: 0xffffff }), 360);
-  const col = new THREE.Color();
-  for (let i = 0; i < 360; i++) {
-    const s = Math.floor(i / 120), j = i % 120;
-    dummy.position.set(13.3 - (j % 3) * .9, 5.4 + (j % 3) * .2, TRACK_LEN - 80 + s * 40 - 13 + Math.floor(j / 3) * .65);
-    dummy.updateMatrix(); dots.setMatrixAt(i, dummy.matrix);
-    dots.setColorAt(i, col.setHSL(Math.random(), .55, .55));
+
+  // Small instanced spectators: darker torsos and varied heads read more like a crowd than white dots.
+  const crowdBodyGeo = new THREE.CylinderGeometry(.12, .16, .48, 6);
+  const crowdHeadGeo = new THREE.SphereGeometry(.13, 7, 6);
+  const crowdBodyMats = [0x293c50, 0x8a4738, 0xd0b18a, 0x3e684c, 0xaaa7a0, 0x5b4c71].map(color => new THREE.MeshStandardMaterial({ color, roughness: .9 }));
+  const crowdHeads = new THREE.InstancedMesh(crowdHeadGeo, new THREE.MeshStandardMaterial({ color: 0xc89d7b, roughness: 1 }), 260);
+  const crowdBodies = crowdBodyMats.map(mat => new THREE.InstancedMesh(crowdBodyGeo, mat, 44));
+  const counters = new Array(crowdBodyMats.length).fill(0);
+  for (let i = 0; i < 260; i++) {
+    const s = i % 3, j = Math.floor(i / 3);
+    const z = TRACK_LEN - 78 + s * 38 - 15 + (j % 15) * 2.05;
+    const x = 12.1 + (j % 4) * .9;
+    const y = 2.3 + Math.floor(j / 15) * .74;
+    dummy.position.set(x, y + .42, z); dummy.scale.setScalar(.9 + Math.random() * .22); dummy.updateMatrix(); crowdHeads.setMatrixAt(i, dummy.matrix);
+    const materialIndex = i % crowdBodyMats.length, index = counters[materialIndex]++;
+    dummy.position.set(x, y, z); dummy.scale.set(1, .85 + Math.random() * .35, 1); dummy.updateMatrix(); crowdBodies[materialIndex].setMatrixAt(index, dummy.matrix);
   }
-  scene.add(dots);
+  scene.add(crowdHeads); crowdBodies.forEach(mesh => scene.add(mesh));
+
+  // Trackside floodlights and simple sponsor boards add scale and a recognisable race venue.
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x555c58, metalness: .35, roughness: .7 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: 0xf2ead1, emissive: 0x655b3b, roughness: .55 });
+  for (let i = 0; i < 6; i++) {
+    const z = 24 + i * 55;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(.12, .18, 10, 8), poleMat); pole.position.set(20, 5, z); pole.castShadow = true; scene.add(pole);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(2.4, .12, .16), poleMat); arm.position.set(19, 9.8, z); scene.add(arm);
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(.85, .22, .5), lampMat); lamp.position.set(17.8, 9.7, z); scene.add(lamp);
+  }
+  const boardMat = new THREE.MeshStandardMaterial({ color: 0x173b2d, roughness: .8 });
+  for (let i = 0; i < 5; i++) {
+    const z = 45 + i * 54;
+    const board = new THREE.Mesh(new THREE.BoxGeometry(.3, 1.6, 8), boardMat); board.position.set(9.4, 2.0, z); board.castShadow = true; scene.add(board);
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(.34, .08, 8.1), new THREE.MeshStandardMaterial({ color: 0xd6af50, metalness: .25, roughness: .65 }));
+    trim.position.set(9.4, 2.82, z); scene.add(trim);
+  }
 }
 buildWorld();
 
 /* ---------------- horses ---------------- */
 let template = null, modelOK = false;
 
-function placeholder(look) {        // simple rival horse (also fallback if the .glb fails)
+function placeholder(look) {        // detailed procedural rival horse and jockey; used only for rivals / GLB fallback
   const g = new THREE.Group();
-  const coat = new THREE.MeshStandardMaterial({ color: look.coat, roughness: .7 });
-  const silk = new THREE.MeshStandardMaterial({ color: look.silk, roughness: .6 });
-  const skin = new THREE.MeshStandardMaterial({ color: 0xd6a078, roughness: .7 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: .8 });
-  const ell = (m, x, y, z, sx, sy, sz) => { const o = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), m); o.position.set(x, y, z); o.scale.set(sx, sy, sz); g.add(o); return o; };
-  ell(coat, 0, 1.4, 0, .38, .46, .95);                 // body
-  ell(coat, 0, 1.45, .55, .33, .42, .4);               // chest
-  ell(skin, 0, 2.2, .85, .26, .42, .18);               // human torso
-  ell(skin, 0, 2.75, .88, .11, .13, .12);              // head
-  ell(silk, 0, 2.3, 0, .2, .38, .2).rotation.x = .5;   // jockey
-  ell(dark, 0, 2.85, .22, .12, .11, .13);              // helmet
-  [[.22, .56], [-.22, .56], [.24, -.8], [-.24, -.8]].forEach(([x, z], i) => {
-    const pv = new THREE.Group(); pv.position.set(x, 1.22, z); pv.name = ['leg_FL', 'leg_FR', 'leg_BL', 'leg_BR'][i];
-    const l = new THREE.Mesh(new THREE.CylinderGeometry(.09, .05, 1.2, 8), coat); l.position.y = -.6; pv.add(l); g.add(pv);
+  const coat = new THREE.MeshStandardMaterial({ color: look.coat, roughness: .78 });
+  const coatLight = new THREE.MeshStandardMaterial({ color: new THREE.Color(look.coat).multiplyScalar(1.13), roughness: .82 });
+  const coatDark = new THREE.MeshStandardMaterial({ color: new THREE.Color(look.coat).multiplyScalar(.48), roughness: .92 });
+  const silk = new THREE.MeshStandardMaterial({ color: look.silk, roughness: .72 });
+  const silkLight = new THREE.MeshStandardMaterial({ color: new THREE.Color(look.silk).multiplyScalar(1.22), roughness: .72 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb77e5f, roughness: .9 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x211a17, roughness: .95 });
+  const leather = new THREE.MeshStandardMaterial({ color: 0x38271c, roughness: .82 });
+  const hoofMat = new THREE.MeshStandardMaterial({ color: 0x282321, roughness: .95 });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x100e0d, roughness: .32 });
+  const metal = new THREE.MeshStandardMaterial({ color: 0x9a8a6d, metalness: .45, roughness: .5 });
+
+  const ell = (parent, material, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0) => {
+    const o = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), material);
+    o.position.set(x, y, z); o.scale.set(sx, sy, sz); o.rotation.set(rx, ry, rz); o.castShadow = true; o.receiveShadow = true; parent.add(o); return o;
+  };
+  const link = (parent, material, a, b, r1, r2 = r1, radial = 9) => {
+    const va = new THREE.Vector3(...a), vb = new THREE.Vector3(...b), d = new THREE.Vector3().subVectors(vb, va);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r2, r1, d.length(), radial), material);
+    mesh.position.copy(va).add(vb).multiplyScalar(.5); mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    mesh.castShadow = true; parent.add(mesh); return mesh;
+  };
+  const tube = (parent, points, material, radius = .025) => {
+    const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
+    const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 12, radius, 6, false), material);
+    mesh.castShadow = true; parent.add(mesh); return mesh;
+  };
+
+  // Muscular barrel, shoulders and hindquarters.
+  const body = new THREE.Group(); body.name = 'body'; g.add(body);
+  ell(body, coat, 0, 1.39, -.05, .43, .47, .91);
+  ell(body, coatLight, 0, 1.43, -.63, .39, .43, .38);
+  ell(body, coat, 0, 1.38, .57, .39, .44, .42);
+  ell(body, coatDark, 0, 1.12, -.22, .35, .22, .58);
+
+  // Neck rises from the chest into a refined head and muzzle.
+  ell(g, coat, 0, 1.86, .78, .265, .56, .32, .39);
+  ell(g, coatLight, 0, 2.13, 1.02, .205, .34, .24, .42);
+  ell(g, coat, 0, 2.29, 1.22, .17, .29, .235, .22);
+  ell(g, coatLight, 0, 2.08, 1.43, .155, .145, .205, .18);
+  ell(g, coatDark, 0, 2.015, 1.54, .13, .09, .115);
+  // nostrils, cheek detail, eyes and ears on both sides
+  for (const side of [-1, 1]) {
+    ell(g, dark, side * .142, 2.13, 1.49, .022, .026, .035);
+    ell(g, eyeMat, side * .158, 2.34, 1.245, .031, .033, .025);
+    ell(g, new THREE.MeshStandardMaterial({ color: 0xe7d4b8, roughness: .5 }), side * .17, 2.35, 1.25, .008, .01, .009);
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(.075, .32, 8), coatDark);
+    ear.position.set(side * .105, 2.57, 1.12); ear.rotation.z = side * -.15; ear.rotation.x = -.12; ear.castShadow = true; g.add(ear);
+    ell(g, coatDark, side * .19, 1.99, 1.16, .07, .13, .11, .2);
+  }
+
+  // Short crest mane and forelock, built from overlapping tapered tufts.
+  for (let i = 0; i < 9; i++) {
+    const z = .62 + i * .075, y = 2.13 + i * .065;
+    const tuft = new THREE.Mesh(new THREE.ConeGeometry(.075, .24, 7), coatDark);
+    tuft.position.set(0, y + .075, z); tuft.rotation.x = .22; tuft.rotation.z = (i % 2 ? .12 : -.12); tuft.castShadow = true; g.add(tuft);
+  }
+  for (let i = 0; i < 3; i++) {
+    const tuft = new THREE.Mesh(new THREE.ConeGeometry(.06, .2, 7), coatDark);
+    tuft.position.set((i - 1) * .07, 2.54, 1.26 + i * .025); tuft.rotation.x = .55; tuft.castShadow = true; g.add(tuft);
+  }
+
+  // Four articulated legs: upper limbs, knees/hocks, cannon bones, fetlocks and individual hooves.
+  const legIds = ['leg_FL', 'leg_FR', 'leg_BL', 'leg_BR'];
+  const legSpecs = [
+    { id: legIds[0], x: -.245, z: .57, front: true },
+    { id: legIds[1], x: .245, z: .57, front: true },
+    { id: legIds[2], x: -.25, z: -.72, front: false },
+    { id: legIds[3], x: .25, z: -.72, front: false }
+  ];
+  const legParts = {};
+  legSpecs.forEach((spec, index) => {
+    const pivot = new THREE.Group(); pivot.position.set(spec.x, 1.15, spec.z); pivot.name = spec.id; g.add(pivot);
+    if (spec.front) {
+      ell(pivot, coat, 0, -.19, 0, .115, .31, .14, -.08);
+      link(pivot, coat, [0, -.12, 0], [0, -.58, .015], .105, .063);
+    } else {
+      ell(pivot, coat, 0, -.2, -.015, .15, .32, .18, -.28);
+      link(pivot, coat, [0, -.18, -.02], [0, -.56, .035], .13, .065);
+    }
+    ell(pivot, coatDark, 0, -.57, .02, .075, .09, .085);
+    const shin = new THREE.Group(); shin.position.set(0, -.56, .02); shin.name = 'shin_' + spec.id.slice(4); pivot.add(shin);
+    link(shin, coatLight, [0, .02, 0], [0, -.48, .025], .062, .043, 8);
+    ell(shin, coat, 0, -.48, .025, .058, .09, .07);
+    const fetlock = ell(shin, coatDark, 0, -.53, .055, .065, .085, .075);
+    const hoof = new THREE.Mesh(new THREE.CylinderGeometry(.07, .105, .16, 8), hoofMat);
+    hoof.position.set(0, -.63, .08); hoof.scale.set(1, 1, 1.12); hoof.rotation.x = -.12; hoof.castShadow = true; shin.add(hoof);
+    const hoofBand = new THREE.Mesh(new THREE.CylinderGeometry(.072, .082, .035, 8), metal);
+    hoofBand.position.set(0, -.57, .08); shin.add(hoofBand);
+    legParts[spec.id] = pivot;
+    legParts['shin_' + spec.id.slice(4)] = shin;
   });
-  const tail = new THREE.Group(); tail.position.set(0, 1.62, -1.0); tail.name = 'tail';
-  const tm = new THREE.Mesh(new THREE.CylinderGeometry(.06, .02, .9, 6), dark); tm.position.y = -.45; tail.add(tm); g.add(tail);
-  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+
+  // Leather tack, shaped saddle and coloured racing cloth.
+  ell(g, silk, 0, 1.77, -.08, .42, .11, .54);
+  ell(g, leather, 0, 1.86, -.08, .31, .14, .39);
+  ell(g, silkLight, 0, 1.74, -.42, .4, .075, .29);
+  for (const side of [-1, 1]) {
+    link(g, leather, [side * .31, 1.75, -.42], [side * .33, 1.1, -.48], .035, .03, 7);
+    link(g, leather, [side * .31, 1.76, .16], [side * .3, 1.2, .3], .035, .03, 7);
+    ell(g, metal, side * .32, 1.12, -.4, .055, .07, .045);
+    // bridle and cheek straps
+    tube(g, [[side * .17, 2.31, 1.24], [side * .2, 2.18, 1.36], [side * .17, 2.02, 1.45], [side * .15, 1.98, 1.2]], leather, .018);
+    tube(g, [[side * .16, 2.34, 1.22], [side * .19, 2.43, 1.1], [side * .14, 2.57, 1.1]], leather, .016);
+    ell(g, metal, side * .17, 2.02, 1.43, .025, .025, .025);
+  }
+  tube(g, [[-.17, 2.01, 1.45], [0, 1.98, 1.53], [.17, 2.01, 1.45]], leather, .022);
+
+  // A separate rider group gives each AI opponent its own visible racing silks and helmet.
+  const rider = new THREE.Group(); rider.name = 'rider'; rider.position.set(0, 0, -.04); g.add(rider);
+  ell(rider, silk, 0, 2.12, .03, .235, .36, .29, .42);
+  ell(rider, silkLight, 0, 2.23, .09, .24, .18, .27, .42);
+  ell(rider, dark, 0, 1.83, -.12, .19, .22, .2, .55);
+  ell(rider, skin, 0, 2.55, .28, .12, .16, .13, .18);
+  // helmet crown, brim and a small team-colour stripe
+  ell(rider, silk, 0, 2.69, .27, .17, .13, .18);
+  ell(rider, dark, 0, 2.64, .28, .19, .035, .2);
+  ell(rider, silkLight, 0, 2.73, .29, .13, .035, .15);
+  for (const side of [-1, 1]) {
+    // bent arms reach down to the reins
+    link(rider, silk, [side * .18, 2.31, .14], [side * .24, 2.17, .42], .09, .065);
+    link(rider, skin, [side * .24, 2.17, .42], [side * .16, 2.06, .83], .055, .04, 8);
+    ell(rider, skin, side * .16, 2.05, .84, .055, .05, .06);
+    // knees and lower legs hug the saddle; boots are dark leather
+    link(rider, dark, [side * .18, 1.93, -.02], [side * .34, 1.57, -.12], .085, .065);
+    link(rider, leather, [side * .34, 1.57, -.12], [side * .32, 1.18, .18], .07, .055);
+    ell(rider, hoofMat, side * .32, 1.14, .22, .075, .12, .18, .15);
+    tube(rider, [[side * .16, 2.07, .82], [side * .12, 2.1, 1.12], [side * .18, 2.18, 1.32]], leather, .012);
+  }
+  // Subtle team stripe down the back of each set of silks.
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(.045, .43, .04), silkLight); stripe.position.set(0, 2.17, -.235); rider.add(stripe);
+
+  // Tail: curved base and a tapered dark tuft, attached to its own animation pivot.
+  const tail = new THREE.Group(); tail.position.set(0, 1.58, - .91); tail.name = 'tail'; g.add(tail);
+  tube(tail, [[0, 0, 0], [0, -.16, -.15], [0, -.38, -.26], [0, -.62, -.25]], coatDark, .055);
+  const tailTuft = new THREE.Mesh(new THREE.ConeGeometry(.105, .52, 8), dark);
+  tailTuft.position.set(0, -.78, -.27); tailTuft.rotation.x = -Math.PI / 2.5; tailTuft.castShadow = true; tail.add(tailTuft);
+
+  // Small mane texture on the underside of the neck.
+  for (let i = 0; i < 5; i++) {
+    const lock = new THREE.Mesh(new THREE.ConeGeometry(.045, .19, 6), coatDark);
+    lock.position.set(0, 1.77 - i * .11, .91 + i * .075); lock.rotation.x = Math.PI * .82; lock.castShadow = true; g.add(lock);
+  }
+
+  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  g.userData.rivalParts = { ...legParts, body, rider, tail };
   return g;
 }
-
 function makeHorse(i) {
   const root = new THREE.Group();
   const look = LOOKS[i];
@@ -271,7 +506,7 @@ function makeHorse(i) {
         o.material = new THREE.MeshBasicMaterial({ map: m.map || null, color: m.map ? 0xffffff : m.color, side: m.side });
       }
     }
-    if (/^(leg_|tail|rider|body$)/.test(o.name)) {
+    if (/^(leg_|tail|rider|body$)/.test(o.name) || (!relief && /^shin_/.test(o.name))) {
       parts[o.name] = o;
       o.userData.base = { rz: o.rotation.z, rx: o.rotation.x, y: o.position.y };
     }
@@ -377,15 +612,21 @@ function updateHorse(h, dt, time) {
     if (P.rider) { P.rider.rotation.z = 0.03 * k * Math.sin(ph - 1.0); P.rider.position.y = P.rider.userData.base.y + 0.02 * k * Math.sin(2 * ph - 0.5); }
     u.model.position.y = Math.abs(Math.sin(ph * 0.5)) * 0.10 * k;
   } else {
-    const amp = 0.95 * k;
+    const amp = 0.78 * k;
     const set = (n, a) => { const p = u.parts[n]; if (p) p.rotation.x = a; };
-    set('leg_FL', Math.sin(ph) * amp);
-    set('leg_FR', Math.sin(ph + 0.9) * amp);
-    set('leg_BL', Math.sin(ph + 3.0) * amp);
-    set('leg_BR', Math.sin(ph + 3.9) * amp);
-    const tail = u.parts.tail; if (tail) tail.rotation.x = 0.35 * k + Math.sin(ph * 1.3) * 0.15 * k;
-    u.model.position.y = Math.abs(Math.sin(ph * 0.5)) * 0.22 * k * HORSE_SCALE;
-    u.model.rotation.x = Math.sin(ph) * 0.045 * k;
+    const frontL = Math.sin(ph), frontR = Math.sin(ph + 0.72);
+    const backL = Math.sin(ph + 2.8), backR = Math.sin(ph + 3.52);
+    set('leg_FL', frontL * amp); set('leg_FR', frontR * amp);
+    set('leg_BL', backL * amp * .92); set('leg_BR', backR * amp * .92);
+    set('shin_FL', Math.max(0, -frontL) * .72 * k - .12 * k);
+    set('shin_FR', Math.max(0, -frontR) * .72 * k - .12 * k);
+    set('shin_BL', Math.max(0, backL) * .62 * k - .1 * k);
+    set('shin_BR', Math.max(0, backR) * .62 * k - .1 * k);
+    const tail = u.parts.tail; if (tail) tail.rotation.x = 0.22 * k + Math.sin(ph * 1.3) * 0.18 * k;
+    const rider = u.parts.rider; if (rider) { rider.rotation.x = .035 * Math.sin(ph + .4) * k; rider.position.y = .025 * Math.sin(2 * ph) * k; }
+    const body = u.parts.body; if (body) { body.rotation.x = .018 * Math.sin(ph) * k; body.position.y = .025 * Math.sin(2 * ph + .5) * k; }
+    u.model.position.y = Math.abs(Math.sin(ph * 0.5)) * 0.16 * k * HORSE_SCALE;
+    u.model.rotation.x = Math.sin(ph) * 0.025 * k;
   }
 }
 
